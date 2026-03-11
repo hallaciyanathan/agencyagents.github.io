@@ -193,7 +193,6 @@ function App() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const agentPrompt = await res.text();
       const formattingPrefix = `RESPONSE FORMAT RULES (follow strictly):
-- DO NOT HALLUCINATE.
 - Write in natural prose. No excessive markdown.
 - Only use bullet points when listing 4+ distinct items. Never nest bullets.
 - Only use bold (**text**) for truly critical terms, max 2 per response.
