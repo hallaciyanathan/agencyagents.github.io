@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Agency × Groq</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { background: #060a10; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #060a10; }
+  ::-webkit-scrollbar-thumb { background: #1e2d3d; border-radius: 2px; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  @keyframes blink  { 0%,100%{opacity:1} 50%{opacity:0} }
+  .pulse  { animation: pulse 1.5s ease-in-out infinite; }
+  .cursor { animation: blink 0.8s step-end infinite; }
+  button { font-family: inherit; }
+  button:hover:not(:disabled) { filter: brightness(1.15); }
+  textarea { font-family: inherit; field-sizing: content; }
+  select, input { font-family: inherit; }
+  .agent-item:hover { background: #0d1625 !important; }
+  .quick-btn:hover { border-color: #f59e0b !important; background: #0d1a26 !important; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const GROQ_BASE = "https://api.groq.com/openai/v1/chat/completions";
+const GH_RAW    = "https://raw.githubusercontent.com/msitarzewski/agency-agents/main";
+
+const GROQ_MODELS = [
+  { id: "llama-3.3-70b-versatile",  label: "LLaMA 3.3 70B (Best)" },
+  { id: "llama-3.1-8b-instant",     label: "LLaMA 3.1 8B (Fastest)" },
+  { id: "mixtral-8x7b-32768",       label: "Mixtral 8x7B" },
+  { id: "gemma2-9b-it",             label: "Gemma 2 9B" },
+];
+
+const AGENTS = [
+  { id:"fe-dev",       name:"Frontend Developer",    emoji:"🎨", div:"Engineering",   path:"engineering/engineering-frontend-developer.md",         desc:"React/Vue/Angular, UI, performance" },
+  { id:"be-arch",      name:"Backend Architect",      emoji:"🏗️", div:"Engineering",   path:"engineering/engineering-backend-architect.md",           desc:"API design, databases, scalability" },
+  { id:"ai-eng",       name:"AI Engineer",            emoji:"🤖", div:"Engineering",   path:"engineering/engineering-ai-engineer.md",                 desc:"ML models, deployment, AI integration" },
+  { id:"devops",       name:"DevOps Automator",       emoji:"🚀", div:"Engineering",   path:"engineering/engineering-devops-automator.md",            desc:"CI/CD, infrastructure, cloud" },
+  { id:"rapid",        name:"Rapid Prototyper",       emoji:"⚡", div:"Engineering",   path:"engineering/engineering-rapid-prototyper.md",            desc:"Fast POCs, MVPs, hackathons" },
+  { id:"security",     name:"Security Engineer",      emoji:"🔒", div:"Engineering",   path:"engineering/engineering-security-engineer.md",           desc:"Threat modeling, secure code review" },
+  { id:"mobile",       name:"Mobile App Builder",     emoji:"📱", div:"Engineering",   path:"engineering/engineering-mobile-app-builder.md",          desc:"iOS/Android, React Native, Flutter" },
+  { id:"ui-design",    name:"UI Designer",            emoji:"🎯", div:"Design",        path:"design/design-ui-designer.md",                           desc:"Visual design, component libraries" },
+  { id:"ux-research",  name:"UX Researcher",          emoji:"🔍", div:"Design",        path:"design/design-ux-researcher.md",                         desc:"User testing, behavior analysis" },
+  { id:"whimsy",       name:"Whimsy Injector",        emoji:"✨", div:"Design",        path:"design/design-whimsy-injector.md",                       desc:"Personality, delight, micro-interactions" },
+  { id:"brand",        name:"Brand Guardian",         emoji:"🎭", div:"Design",        path:"design/design-brand-guardian.md",                        desc:"Brand identity, consistency" },
+  { id:"img-prompt",   name:"Image Prompt Engineer",  emoji:"📷", div:"Design",        path:"design/design-image-prompt-engineer.md",                 desc:"AI image gen prompts, photography" },
+  { id:"growth",       name:"Growth Hacker",          emoji:"📈", div:"Marketing",     path:"marketing/marketing-growth-hacker.md",                   desc:"User acquisition, viral loops" },
+  { id:"content",      name:"Content Creator",        emoji:"📝", div:"Marketing",     path:"marketing/marketing-content-creator.md",                 desc:"Multi-platform content, editorial" },
+  { id:"reddit",       name:"Reddit Community",       emoji:"🤝", div:"Marketing",     path:"marketing/marketing-reddit-community-builder.md",        desc:"Authentic engagement, community trust" },
+  { id:"twitter",      name:"Twitter Engager",        emoji:"🐦", div:"Marketing",     path:"marketing/marketing-twitter-engager.md",                 desc:"Real-time engagement, thought leadership" },
+  { id:"tiktok",       name:"TikTok Strategist",      emoji:"📱", div:"Marketing",     path:"marketing/marketing-tiktok-strategist.md",               desc:"Viral content, algorithm optimization" },
+  { id:"sprint",       name:"Sprint Prioritizer",     emoji:"🗂️", div:"Product",       path:"product/product-sprint-prioritizer.md",                  desc:"Agile planning, feature prioritization" },
+  { id:"trend",        name:"Trend Researcher",       emoji:"🔭", div:"Product",       path:"product/product-trend-researcher.md",                    desc:"Market intelligence, competitive analysis" },
+  { id:"feedback",     name:"Feedback Synthesizer",   emoji:"💬", div:"Product",       path:"product/product-feedback-synthesizer.md",                desc:"User feedback analysis, insights" },
+  { id:"reality",      name:"Reality Checker",        emoji:"🔎", div:"Testing",       path:"testing/testing-reality-checker.md",                     desc:"Evidence-based QA, quality gates" },
+  { id:"perf",         name:"Performance Benchmarker",emoji:"⚡", div:"Testing",       path:"testing/testing-performance-benchmarker.md",             desc:"Speed testing, load testing" },
+  { id:"a11y",         name:"Accessibility Auditor",  emoji:"♿", div:"Testing",       path:"testing/testing-accessibility-auditor.md",               desc:"WCAG auditing, inclusive design" },
+  { id:"api-test",     name:"API Tester",             emoji:"🔌", div:"Testing",       path:"testing/testing-api-tester.md",                          desc:"API validation, integration testing" },
+  { id:"support",      name:"Support Responder",      emoji:"🛟", div:"Support",       path:"support/support-support-responder.md",                   desc:"Customer service, issue resolution" },
+  { id:"analytics",    name:"Analytics Reporter",     emoji:"📊", div:"Support",       path:"support/support-analytics-reporter.md",                  desc:"Data analysis, dashboards, insights" },
+  { id:"legal",        name:"Legal Compliance",       emoji:"⚖️", div:"Support",       path:"support/support-legal-compliance-checker.md",            desc:"Compliance, regulations, legal review" },
+  { id:"orchestrator", name:"Agents Orchestrator",    emoji:"🎭", div:"Specialized",   path:"specialized/agents-orchestrator.md",                     desc:"Multi-agent coordination" },
+  { id:"pm-senior",    name:"Senior Project Manager", emoji:"👔", div:"Project Mgmt",  path:"project-management/project-manager-senior.md",           desc:"Scoping, task conversion, scope mgmt" },
+  { id:"shepherd",     name:"Project Shepherd",       emoji:"🐑", div:"Project Mgmt",  path:"project-management/project-management-project-shepherd.md", desc:"Cross-functional coordination" },
+];
+
+const DIV_COLORS = {
+  Engineering:  "#f59e0b",
+  Design:       "#a78bfa",
+  Marketing:    "#34d399",
+  Product:      "#60a5fa",
+  Testing:      "#f87171",
+  Support:      "#fb923c",
+  Specialized:  "#e879f9",
+  "Project Mgmt":"#94a3b8",
+};
+
+function App() {
+  const [apiKey,        setApiKey]        = useState(() => localStorage.getItem("groq_key") || "");
+  const [model,         setModel]         = useState(GROQ_MODELS[0].id);
+  const [selectedAgent, setSelectedAgent] = useState(null);
+  const [systemPrompt,  setSystemPrompt]  = useState("");
+  const [loadingPrompt, setLoadingPrompt] = useState(false);
+  const [messages,      setMessages]      = useState([]);
+  const [input,         setInput]         = useState("");
+  const [streaming,     setStreaming]      = useState(false);
+  const [sidebarOpen,   setSidebarOpen]   = useState(true);
+  const [searchQ,       setSearchQ]       = useState("");
+  const [error,         setError]         = useState("");
+  const [showSettings,  setShowSettings]  = useState(false);
+  const bottomRef = useRef(null);
+  const inputRef  = useRef(null);
+
+  // Persist API key
+  useEffect(() => { if (apiKey) localStorage.setItem("groq_key", apiKey); }, [apiKey]);
+
+  const filteredAgents = AGENTS.filter(a =>
+    a.name.toLowerCase().includes(searchQ.toLowerCase()) ||
+    a.div.toLowerCase().includes(searchQ.toLowerCase()) ||
+    a.desc.toLowerCase().includes(searchQ.toLowerCase())
+  );
+
+  const grouped = filteredAgents.reduce((acc, a) => {
+    if (!acc[a.div]) acc[a.div] = [];
+    acc[a.div].push(a);
+    return acc;
+  }, {});
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  const selectAgent = useCallback(async (agent) => {
+    setSelectedAgent(agent);
+    setMessages([]);
+    setError("");
+    setLoadingPrompt(true);
+    setSystemPrompt("");
+    try {
+      const res = await fetch(`${GH_RAW}/${agent.path}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSystemPrompt(await res.text());
+    } catch (e) {
+      setError(`Could not load agent prompt: ${e.message}`);
+    } finally {
+      setLoadingPrompt(false);
+    }
+    if (window.innerWidth < 900) setSidebarOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
+
+  const sendMessage = async () => {
+    if (!input.trim() || streaming) return;
+    if (!apiKey)       { setError("Enter your Groq API key in ⚙️ Settings"); return; }
+    if (!systemPrompt) { setError("Agent still loading — please wait a moment"); return; }
+    setError("");
+
+    const userMsg    = { role: "user", content: input.trim() };
+    const newHistory = [...messages, userMsg];
+    setMessages(newHistory);
+    setInput("");
+    setStreaming(true);
+    setMessages(prev => [...prev, { role: "assistant", content: "" }]);
+
+    try {
+      const res = await fetch(GROQ_BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model, stream: true,
+          messages: [{ role: "system", content: systemPrompt }, ...newHistory],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `HTTP ${res.status}`);
+      }
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+          try {
+            const delta = JSON.parse(data).choices?.[0]?.delta?.content || "";
+            if (delta) setMessages(prev => {
+              const c = [...prev];
+              c[c.length-1] = { ...c[c.length-1], content: c[c.length-1].content + delta };
+              return c;
+            });
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      setMessages(prev => prev.slice(0,-1));
+      setError(`Error: ${e.message}`);
+    } finally {
+      setStreaming(false);
+      inputRef.current?.focus();
+    }
+  };
+
+  const handleKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  };
+
+  const divColor = (div) => DIV_COLORS[div] || "#94a3b8";
+
+  return (
+    <div style={{fontFamily:"'JetBrains Mono',monospace",background:"#060a10",color:"#e2e8f0",height:"100vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+      {/* ── Header ── */}
+      <header style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 18px",borderBottom:"1px solid #1a2535",background:"#060a10",zIndex:100,flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>setSidebarOpen(v=>!v)}
+            style={{background:"none",border:"1px solid #1a2535",color:"#94a3b8",padding:"6px 10px",borderRadius:6,cursor:"pointer",fontSize:16}}>
+            {sidebarOpen ? "✕" : "☰"}
+          </button>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:22}}>🎭</span>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,letterSpacing:"0.18em",color:"#f59e0b"}}>THE AGENCY</div>
+              <div style={{fontSize:9,color:"#475569",letterSpacing:"0.12em"}}>AI SPECIALISTS · GROQ POWERED</div>
+            </div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {selectedAgent && (
+            <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#94a3b8",background:"#0a1520",padding:"5px 10px",borderRadius:6,border:"1px solid #1a2535"}}>
+              <span>{selectedAgent.emoji}</span>
+              <span style={{color:divColor(selectedAgent.div)}}>{selectedAgent.name}</span>
+              {loadingPrompt && <span className="pulse" style={{color:"#f59e0b"}}>●</span>}
+            </div>
+          )}
+          <button onClick={()=>setShowSettings(v=>!v)}
+            style={{background:showSettings?"#0a1520":"none",border:"1px solid #1a2535",padding:"6px 10px",borderRadius:6,cursor:"pointer",fontSize:14,color:"#94a3b8"}}>
+            ⚙️
+          </button>
+        </div>
+      </header>
+
+      {/* ── Settings ── */}
+      {showSettings && (
+        <div style={{background:"#070c14",borderBottom:"1px solid #1a2535",padding:"14px 18px",display:"flex",gap:18,flexWrap:"wrap",alignItems:"flex-end",flexShrink:0}}>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:9,letterSpacing:"0.15em",color:"#475569",fontWeight:700}}>GROQ API KEY</label>
+            <input type="password" placeholder="gsk_..." value={apiKey}
+              onChange={e=>setApiKey(e.target.value)}
+              style={{background:"#0d1a26",border:"1px solid #1a2535",color:"#e2e8f0",borderRadius:6,padding:"7px 11px",fontSize:12,fontFamily:"inherit",outline:"none",minWidth:240}}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:9,letterSpacing:"0.15em",color:"#475569",fontWeight:700}}>MODEL</label>
+            <select value={model} onChange={e=>setModel(e.target.value)}
+              style={{background:"#0d1a26",border:"1px solid #1a2535",color:"#e2e8f0",borderRadius:6,padding:"7px 11px",fontSize:12,fontFamily:"inherit",outline:"none",cursor:"pointer"}}>
+              {GROQ_MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </div>
+          <div style={{fontSize:10,color:"#475569"}}>
+            Free key → <span style={{color:"#f59e0b"}}>console.groq.com</span>
+            <span style={{marginLeft:12,color:"#1e3a5f"}}>Key saved in browser localStorage</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Body ── */}
+      <div style={{display:"flex",flex:1,overflow:"hidden",position:"relative"}}>
+
+        {/* Sidebar */}
+        <aside style={{
+          width:272,flexShrink:0,background:"#070c14",borderRight:"1px solid #1a2535",
+          display:"flex",flexDirection:"column",
+          position:"absolute",top:0,left:0,bottom:0,zIndex:50,
+          transform:sidebarOpen?"translateX(0)":"translateX(-100%)",
+          transition:"transform 0.22s ease",
+        }}>
+          <input value={searchQ} onChange={e=>setSearchQ(e.target.value)}
+            placeholder="🔍  Search agents…"
+            style={{margin:10,padding:"7px 11px",background:"#0d1a26",border:"1px solid #1a2535",borderRadius:6,color:"#e2e8f0",fontSize:11,fontFamily:"inherit",outline:"none"}}/>
+          <div style={{overflowY:"auto",flex:1,padding:"2px 6px 16px"}}>
+            {Object.entries(grouped).map(([div,agents])=>(
+              <div key={div}>
+                <div style={{fontSize:9,letterSpacing:"0.18em",fontWeight:700,padding:"10px 8px 4px",color:divColor(div)}}>
+                  {div.toUpperCase()} <span style={{color:"#334155",fontWeight:400}}>({agents.length})</span>
+                </div>
+                {agents.map(agent=>(
+                  <button key={agent.id} className="agent-item"
+                    onClick={()=>selectAgent(agent)}
+                    style={{
+                      display:"flex",alignItems:"center",gap:9,width:"100%",textAlign:"left",
+                      background:selectedAgent?.id===agent.id?"#0d1a26":"none",
+                      border:"none",color:selectedAgent?.id===agent.id?"#e2e8f0":"#64748b",
+                      padding:"7px 8px",borderRadius:7,cursor:"pointer",transition:"background 0.12s",
+                      borderLeft:selectedAgent?.id===agent.id?`2px solid ${divColor(div)}`:"2px solid transparent",
+                    }}>
+                    <span style={{fontSize:15,flexShrink:0}}>{agent.emoji}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:11,fontWeight:600,color:selectedAgent?.id===agent.id?divColor(div):"#94a3b8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{agent.name}</div>
+                      <div style={{fontSize:9,color:"#334155",marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{agent.desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div style={{padding:"10px 12px",borderTop:"1px solid #1a2535",fontSize:9,color:"#334155",letterSpacing:"0.08em"}}>
+            {AGENTS.length} AGENTS · github.com/msitarzewski/agency-agents
+          </div>
+        </aside>
+
+        {/* Overlay for mobile */}
+        {sidebarOpen && (
+          <div onClick={()=>setSidebarOpen(false)}
+            style={{position:"absolute",inset:0,zIndex:40,background:"rgba(0,0,0,0.5)"}}/>
+        )}
+
+        {/* Main */}
+        <main style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",marginLeft:0}}>
+          {!selectedAgent ? (
+            <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:40,gap:18,textAlign:"center"}}>
+              <div style={{fontSize:60}}>🎭</div>
+              <h2 style={{fontSize:20,fontWeight:700,color:"#f1f5f9",letterSpacing:"0.06em"}}>Your AI Dream Team Awaits</h2>
+              <p style={{fontSize:12,color:"#475569",lineHeight:1.8,maxWidth:420}}>
+                Select a specialist from the sidebar. Each agent is loaded with deep<br/>
+                expertise, unique personality, and production-ready workflows — powered by Groq.
+              </p>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,width:"100%",maxWidth:460,marginTop:8}}>
+                {[AGENTS[0],AGENTS[7],AGENTS[12],AGENTS[20]].map(a=>(
+                  <button key={a.id} className="quick-btn" onClick={()=>selectAgent(a)}
+                    style={{background:"#0a1520",border:"1px solid #1a2535",borderRadius:10,padding:"14px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:5,cursor:"pointer",color:"#e2e8f0",transition:"all 0.15s"}}>
+                    <span style={{fontSize:22}}>{a.emoji}</span>
+                    <span style={{color:divColor(a.div),fontWeight:600,fontSize:10}}>{a.name}</span>
+                    <span style={{color:"#475569",fontSize:9}}>{a.div}</span>
+                  </button>
+                ))}
+              </div>
+              <button onClick={()=>setSidebarOpen(true)}
+                style={{background:"none",border:"1px solid #f59e0b",color:"#f59e0b",padding:"9px 20px",borderRadius:8,cursor:"pointer",fontSize:11,letterSpacing:"0.08em",marginTop:4}}>
+                ☰  Browse All {AGENTS.length} Agents
+              </button>
+              {!apiKey && (
+                <div style={{marginTop:8,fontSize:11,color:"#92400e",background:"#1c0f00",border:"1px solid #78350f",borderRadius:8,padding:"8px 16px"}}>
+                  ⚠️ Set your Groq API key in <button onClick={()=>setShowSettings(true)} style={{background:"none",border:"none",color:"#f59e0b",cursor:"pointer",textDecoration:"underline",fontSize:11,fontFamily:"inherit"}}>⚙️ Settings</button> to start chatting
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+              <div style={{flex:1,overflowY:"auto",padding:"18px 18px 8px"}}>
+
+                {messages.length===0 && !loadingPrompt && (
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",padding:"28px 16px",gap:6}}>
+                    <div style={{fontSize:52}}>{selectedAgent.emoji}</div>
+                    <div style={{fontSize:17,fontWeight:700,color:divColor(selectedAgent.div),letterSpacing:"0.06em",marginTop:6}}>{selectedAgent.name}</div>
+                    <div style={{fontSize:10,color:"#475569",letterSpacing:"0.12em"}}>{selectedAgent.div.toUpperCase()} DIVISION</div>
+                    <div style={{fontSize:12,color:"#64748b",marginTop:4}}>{selectedAgent.desc}</div>
+                    <div style={{marginTop:14,fontSize:10,color:"#34d399",background:"#051a10",border:"1px solid #065f46",padding:"5px 14px",borderRadius:20}}>
+                      {systemPrompt ? `✓ Agent loaded · ${systemPrompt.length.toLocaleString()} chars` : "Loading agent profile…"}
+                    </div>
+                    <div style={{marginTop:8,fontSize:10,color:"#334155"}}>
+                      Enter ↵ to send &nbsp;·&nbsp; Shift+Enter for newline
+                    </div>
+                  </div>
+                )}
+
+                {loadingPrompt && messages.length===0 && (
+                  <div className="pulse" style={{textAlign:"center",padding:40,color:"#f59e0b",fontSize:11,letterSpacing:"0.12em"}}>
+                    LOADING {selectedAgent.name.toUpperCase()} PROFILE…
+                  </div>
+                )}
+
+                {messages.map((msg,i)=>(
+                  <div key={i} style={{display:"flex",gap:9,marginBottom:14,justifyContent:msg.role==="user"?"flex-end":"flex-start",alignItems:"flex-end"}}>
+                    {msg.role==="assistant" && (
+                      <div style={{width:30,height:30,background:"#0a1520",border:"1px solid #1a2535",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>
+                        {selectedAgent.emoji}
+                      </div>
+                    )}
+                    <div style={msg.role==="user"
+                      ? {maxWidth:"72%",background:"#0c1f3a",border:"1px solid #1e3a5f",borderRadius:"14px 14px 3px 14px",padding:"10px 13px"}
+                      : {maxWidth:"80%",background:"#0a1520",border:"1px solid #1a2535",borderRadius:"14px 14px 14px 3px",padding:"10px 13px"}}>
+                      <pre style={{margin:0,fontSize:12,lineHeight:1.7,color:"#e2e8f0",fontFamily:"inherit",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                        {msg.content}
+                        {msg.role==="assistant" && streaming && i===messages.length-1
+                          ? <span className="cursor" style={{color:"#f59e0b"}}>▌</span>
+                          : null}
+                      </pre>
+                    </div>
+                    {msg.role==="user" && (
+                      <div style={{width:28,height:28,background:"#0c1f3a",border:"1px solid #1e3a5f",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0,color:"#60a5fa"}}>
+                        ✦
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div ref={bottomRef}/>
+              </div>
+
+              {error && (
+                <div style={{margin:"0 14px 6px",padding:"7px 13px",background:"#1c0a0a",border:"1px solid #7f1d1d",borderRadius:8,fontSize:11,color:"#fca5a5",display:"flex",alignItems:"center",gap:8}}>
+                  ⚠️ {error}
+                  <button onClick={()=>setError("")} style={{marginLeft:"auto",background:"none",border:"none",color:"#fca5a5",cursor:"pointer",fontSize:12}}>✕</button>
+                </div>
+              )}
+
+              <div style={{padding:"0 14px 8px",display:"flex",gap:8,alignItems:"flex-end"}}>
+                <textarea ref={inputRef} rows={1} value={input}
+                  onChange={e=>setInput(e.target.value)}
+                  onKeyDown={handleKey}
+                  disabled={streaming||loadingPrompt}
+                  placeholder={`Message ${selectedAgent.name}…`}
+                  style={{flex:1,background:"#0a1520",border:"1px solid #1a2535",borderRadius:10,color:"#e2e8f0",padding:"11px 13px",fontSize:12,fontFamily:"inherit",resize:"none",outline:"none",lineHeight:1.6,maxHeight:150,overflowY:"auto"}}/>
+                <button onClick={sendMessage}
+                  disabled={!input.trim()||streaming||loadingPrompt}
+                  style={{width:40,height:40,background:"#f59e0b",border:"none",borderRadius:10,cursor:"pointer",fontSize:18,color:"#000",fontWeight:700,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",opacity:(!input.trim()||streaming||loadingPrompt)?0.35:1,transition:"opacity 0.15s"}}>
+                  {streaming?"●":"↑"}
+                </button>
+              </div>
+              <div style={{textAlign:"center",fontSize:9,color:"#1e3a5f",letterSpacing:"0.08em",paddingBottom:8}}>
+                {GROQ_MODELS.find(m=>m.id===model)?.label} · Enter↵ send · Shift+Enter newline
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
