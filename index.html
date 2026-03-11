@@ -193,7 +193,7 @@ function App() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const agentPrompt = await res.text();
       const formattingPrefix = `RESPONSE FORMAT RULES (follow strictly):
-- Write in plain, natural prose. No excessive markdown.
+- Write in natural prose. No excessive markdown.
 - Only use bullet points when listing 4+ distinct items. Never nest bullets.
 - Only use bold (**text**) for truly critical terms, max 2 per response.
 - Never use headers (##) unless the response is a structured document explicitly requested.
@@ -201,6 +201,7 @@ function App() {
 - Keep code blocks only for actual code. Never wrap non-code in backticks.
 - Hyperlinks: only include if directly relevant and user asked for references.
 - Be concise. Say more with fewer words. No padding or filler sentences.
+- Refer to the source. Always provide valid source URL which was referred. 
 
 `;
       setSystemPrompt(formattingPrefix + agentPrompt);
