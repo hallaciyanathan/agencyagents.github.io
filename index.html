@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -26,6 +27,48 @@
   select, input { font-family: inherit; }
   .agent-item:hover { background: #0d1625 !important; }
   .quick-btn:hover { border-color: #f59e0b !important; background: #0d1a26 !important; }
+
+  /* Markdown rendered content */
+  .md-body { font-size: 13px; line-height: 1.75; color: #cbd5e1; }
+  .md-body p { margin: 0 0 10px; }
+  .md-body p:last-child { margin-bottom: 0; }
+  .md-body h1,.md-body h2,.md-body h3,.md-body h4 {
+    color: #f1f5f9; font-weight: 700; margin: 16px 0 8px; line-height: 1.3;
+  }
+  .md-body h1 { font-size: 17px; border-bottom: 1px solid #1a2535; padding-bottom: 6px; }
+  .md-body h2 { font-size: 15px; }
+  .md-body h3 { font-size: 13px; color: #f59e0b; }
+  .md-body h4 { font-size: 12px; color: #94a3b8; }
+  .md-body strong { color: #f1f5f9; font-weight: 700; }
+  .md-body em { color: #a78bfa; font-style: italic; }
+  .md-body a { color: #60a5fa; text-decoration: underline; word-break: break-all; }
+  .md-body a:hover { color: #93c5fd; }
+  .md-body code {
+    background: #0d1a26; border: 1px solid #1e3a5f; color: #34d399;
+    padding: 2px 6px; border-radius: 4px; font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .md-body pre {
+    background: #070f1a; border: 1px solid #1a2535; border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; margin: 10px 0;
+  }
+  .md-body pre code {
+    background: none; border: none; padding: 0; color: #a3e635;
+    font-size: 12px; line-height: 1.6;
+  }
+  .md-body ul, .md-body ol { padding-left: 20px; margin: 8px 0 10px; }
+  .md-body li { margin-bottom: 4px; color: #cbd5e1; }
+  .md-body li::marker { color: #f59e0b; }
+  .md-body blockquote {
+    border-left: 3px solid #f59e0b; padding: 6px 12px;
+    margin: 10px 0; background: #0a1520; color: #94a3b8;
+    border-radius: 0 6px 6px 0;
+  }
+  .md-body hr { border: none; border-top: 1px solid #1a2535; margin: 14px 0; }
+  .md-body table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+  .md-body th { background: #0d1a26; color: #f59e0b; padding: 7px 10px; text-align: left; border: 1px solid #1a2535; }
+  .md-body td { padding: 6px 10px; border: 1px solid #1a2535; color: #cbd5e1; }
+  .md-body tr:nth-child(even) td { background: #070c14; }
 </style>
 </head>
 <body>
@@ -41,8 +84,26 @@ const GROQ_MODELS = [
   { id: "llama-3.1-8b-instant",     label: "LLaMA 3.1 8B (Fastest)" },
   { id: "mixtral-8x7b-32768",       label: "Mixtral 8x7B" },
   { id: "gemma2-9b-it",             label: "Gemma 2 9B" },
-  { id: "openai/gpt-oss-120b",             label: "openai/gpt-oss-120b" }
+  { id: "openai/gpt-oss-120b",             label: "GPT OSS 120B" },
 ];
+
+// Configure marked
+marked.setOptions({ breaks: true, gfm: true });
+
+function MarkdownMessage({ content, streaming }) {
+  const html = React.useMemo(() => {
+    const safe = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // restore back for marked (we need real HTML out)
+    try {
+      return marked.parse(content);
+    } catch(e) { return content; }
+  }, [content]);
+  return (
+    <div className="md-body"
+      dangerouslySetInnerHTML={{ __html: html + (streaming ? '<span class="cursor" style="color:#f59e0b">▌</span>' : "") }}
+    />
+  );
+}
 
 const AGENTS = [
   { id:"fe-dev",       name:"Frontend Developer",    emoji:"🎨", div:"Engineering",   path:"engineering/engineering-frontend-developer.md",         desc:"React/Vue/Angular, UI, performance" },
@@ -130,7 +191,19 @@ function App() {
     try {
       const res = await fetch(`${GH_RAW}/${agent.path}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setSystemPrompt(await res.text());
+      const agentPrompt = await res.text();
+      const formattingPrefix = `RESPONSE FORMAT RULES (follow strictly):
+- Write in plain, natural prose. No excessive markdown.
+- Only use bullet points when listing 4+ distinct items. Never nest bullets.
+- Only use bold (**text**) for truly critical terms, max 2 per response.
+- Never use headers (##) unless the response is a structured document explicitly requested.
+- Never use horizontal rules (---).
+- Keep code blocks only for actual code. Never wrap non-code in backticks.
+- Hyperlinks: only include if directly relevant and user asked for references.
+- Be concise. Say more with fewer words. No padding or filler sentences.
+
+`;
+      setSystemPrompt(formattingPrefix + agentPrompt);
     } catch (e) {
       setError(`Could not load agent prompt: ${e.message}`);
     } finally {
@@ -352,7 +425,7 @@ function App() {
                     <div style={{fontSize:10,color:"#475569",letterSpacing:"0.12em"}}>{selectedAgent.div.toUpperCase()} DIVISION</div>
                     <div style={{fontSize:12,color:"#64748b",marginTop:4}}>{selectedAgent.desc}</div>
                     <div style={{marginTop:14,fontSize:10,color:"#34d399",background:"#051a10",border:"1px solid #065f46",padding:"5px 14px",borderRadius:20}}>
-                      {systemPrompt ? `✓ Agent loaded · ${systemPrompt.length.toLocaleString()} chars` : "Loading agent profile…"}
+                      {systemPrompt ? `✓ Agent loaded · ${(systemPrompt.length - 380).toLocaleString()} chars` : "Loading agent profile…"}
                     </div>
                     <div style={{marginTop:8,fontSize:10,color:"#334155"}}>
                       Enter ↵ to send &nbsp;·&nbsp; Shift+Enter for newline
@@ -376,12 +449,10 @@ function App() {
                     <div style={msg.role==="user"
                       ? {maxWidth:"72%",background:"#0c1f3a",border:"1px solid #1e3a5f",borderRadius:"14px 14px 3px 14px",padding:"10px 13px"}
                       : {maxWidth:"80%",background:"#0a1520",border:"1px solid #1a2535",borderRadius:"14px 14px 14px 3px",padding:"10px 13px"}}>
-                      <pre style={{margin:0,fontSize:12,lineHeight:1.7,color:"#e2e8f0",fontFamily:"inherit",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
-                        {msg.content}
-                        {msg.role==="assistant" && streaming && i===messages.length-1
-                          ? <span className="cursor" style={{color:"#f59e0b"}}>▌</span>
-                          : null}
-                      </pre>
+                      {msg.role==="user"
+                        ? <p style={{margin:0,fontSize:12,lineHeight:1.7,color:"#e2e8f0",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{msg.content}</p>
+                        : <MarkdownMessage content={msg.content} streaming={streaming && i===messages.length-1} />
+                      }
                     </div>
                     {msg.role==="user" && (
                       <div style={{width:28,height:28,background:"#0c1f3a",border:"1px solid #1e3a5f",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0,color:"#60a5fa"}}>
